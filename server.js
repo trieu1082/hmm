@@ -3,7 +3,6 @@ const crypto = require('crypto')
 const fs = require('fs-extra')
 const path = require('path')
 const rateLimit = require('express-rate-limit')
-const pako = require('pako')
 require('dotenv').config()
 
 const app = express()
@@ -16,8 +15,6 @@ const KEY = Buffer.from(
 
 app.use(express.json({limit:"2mb"}))
 app.use(express.urlencoded({extended:true}))
-
-// 👇 serve UI
 app.use(express.static(path.join(__dirname,'public')))
 
 const DIR = path.join(__dirname,'scripts')
@@ -33,8 +30,7 @@ const enc = t=>{
 }
 
 const pack = s=>{
-  const def = pako.deflate(s)
-  return enc(Buffer.from(def).toString('base64'))
+  return enc(Buffer.from(s).toString('base64'))
 }
 
 const sign = t=>crypto.createHmac('sha256',KEY).update(t).digest('hex')
@@ -46,7 +42,6 @@ const badUA = ua=>{
 
 const limiter = rateLimit({windowMs:10000,max:25})
 
-// upload
 app.post('/upload',limiter,(req,res)=>{
   try{
     const c=req.body.content
@@ -55,7 +50,7 @@ app.post('/upload',limiter,(req,res)=>{
     const id=crypto.randomBytes(8).toString('hex')
     fs.writeFileSync(path.join(DIR,id+'.enc'),pack(c))
 
-    const base=`${req.protocol}://${req.get('host')}`
+    const base=`https://${req.get('host')}`
 
     res.json({
       id,
@@ -66,7 +61,6 @@ app.post('/upload',limiter,(req,res)=>{
   }
 })
 
-// token
 app.get('/token/:id',(req,res)=>{
   if(badUA(req.headers['user-agent'])) return res.status(403).send('blocked')
 
@@ -74,7 +68,7 @@ app.get('/token/:id',(req,res)=>{
   const t=crypto.randomBytes(12).toString('hex')
   const ts=Date.now()
 
-  TOKENS.set(t,{id,time:ts,ip:req.ip})
+  TOKENS.set(t,{id,time:ts})
 
   const sig=sign(t+ts)
 
@@ -83,19 +77,17 @@ return (function()
   local t="${t}"
   local ts="${ts}"
   local sig="${sig}"
-  return game:HttpGet("${req.protocol}://${req.get('host')}/load/${id}?t="..t.."&ts="..ts.."&sig="..sig)
+  return game:HttpGet("https://${req.get('host')}/load/${id}?t="..t.."&ts="..ts.."&sig="..sig)
 end)()
 `)
 })
 
-// load
 app.get('/load/:id',limiter,(req,res)=>{
   try{
     const {t,ts,sig}=req.query
     const d=TOKENS.get(t)
 
     if(!d) return res.status(403).send('bad token')
-    if(req.ip!==d.ip) return res.status(403).send('ip mismatch')
     if(Date.now()-d.time>10000){TOKENS.delete(t);return res.status(403).send('expired')}
     if(sig!==sign(t+ts)) return res.status(403).send('invalid sig')
 
@@ -109,14 +101,11 @@ app.get('/load/:id',limiter,(req,res)=>{
     res.setHeader('Content-Type','text/plain')
 
     res.send(`
--- protected
 local d="${payload}"
 local Http=game:GetService("HttpService")
 
 local function b64(x)return Http:Base64Decode(x)end
 local function dec(e)local _,dat=e:match("([^:]+):(.+)")return dat end
-
-if not identifyexecutor then return end
 
 local ok,src=pcall(function()
   return b64(dec(d))
@@ -124,16 +113,11 @@ end)
 
 if not ok then return end
 
-local _=0 for i=1,30 do _=_+i end
-
 return loadstring(src)()
 `)
   }catch{
     res.status(500).send('err')
   }
 })
-
-// ❌ BỎ cái này đi
-// app.get('/',(req,res)=>res.send('ok'))
 
 app.listen(PORT,()=>console.log("running "+PORT))
