@@ -20,7 +20,6 @@ app.use(express.static(path.join(__dirname,'public')))
 const DIR = path.join(__dirname,'scripts')
 fs.ensureDirSync(DIR)
 
-const TOKENS = new Map()
 const IV = 16
 
 // encrypt
@@ -42,9 +41,6 @@ const dec = e=>{
 const pack = s=>enc(Buffer.from(s).toString('base64'))
 
 const sign = t=>crypto.createHmac('sha256',KEY).update(t).digest('hex')
-
-// tắt UA check
-const badUA = _=>false
 
 const limiter = rateLimit({windowMs:10000,max:25})
 
@@ -68,41 +64,39 @@ app.post('/upload',limiter,(req,res)=>{
 })
 
 app.get('/token/:id',(req,res)=>{
-  if(badUA(req.headers['user-agent'])) return res.status(403).send('blocked')
-
   const id=req.params.id
-  const t=crypto.randomBytes(12).toString('hex')
   const ts=Date.now()
 
-  TOKENS.set(t,{id,time:ts})
+  // encode id vào token luôn
+  const t = id + "." + crypto.randomBytes(6).toString('hex')
 
   const sig=sign(t+ts)
 
   res.setHeader('Content-Type','text/plain')
   res.setHeader('X-Content-Type-Options','nosniff')
 
-  // 1 LINE -> không bao giờ vỡ
+  // 1 dòng, không xuống dòng
   res.send(
-`return(function()local t="${t}"local ts="${ts}"local sig="${sig}"return game:HttpGet("https://${req.get('host')}/load/${id}?t="..t.."&ts="..ts.."&sig="..sig)end)()`
+`return(function()local t="${t}"local ts="${ts}"local sig="${sig}"return game:HttpGet("https://${req.get('host')}/load?t="..t.."&ts="..ts.."&sig="..sig)end)()`
   )
 })
 
-app.get('/load/:id',limiter,(req,res)=>{
+app.get('/load',limiter,(req,res)=>{
   try{
     const {t,ts,sig}=req.query
-    const d=TOKENS.get(t)
 
-    if(!d) return res.status(403).send('bad token')
-    if(Date.now()-d.time>60000){ // tăng lên 60s
-      TOKENS.delete(t)
-      return res.status(403).send('expired')
-    }
+    if(!t||!ts||!sig) return res.status(400).send('bad')
 
+    // verify sig
     if(sig!==sign(t+ts)) return res.status(403).send('invalid sig')
 
-    TOKENS.delete(t)
+    // check time (60s)
+    if(Date.now()-parseInt(ts)>60000) return res.status(403).send('expired')
 
-    const f=path.join(DIR,req.params.id+'.enc')
+    // lấy id từ token
+    const id = t.split('.')[0]
+
+    const f=path.join(DIR,id+'.enc')
     if(!fs.existsSync(f)) return res.status(404).send('not found')
 
     const payload=fs.readFileSync(f,'utf8')
