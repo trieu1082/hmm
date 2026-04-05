@@ -44,6 +44,7 @@ const sign = t=>crypto.createHmac('sha256',KEY).update(t).digest('hex')
 
 const limiter = rateLimit({windowMs:10000,max:25})
 
+// upload script
 app.post('/upload',limiter,(req,res)=>{
   try{
     const c=req.body.content
@@ -63,28 +64,24 @@ app.post('/upload',limiter,(req,res)=>{
   }
 })
 
+// token endpoint
 app.get('/token/:id',(req,res)=>{
   const id=req.params.id
   const ts=Date.now()
-
-  // encode id vào token luôn
   const t = id + "." + crypto.randomBytes(6).toString('hex')
-
   const sig=sign(t+ts)
 
   res.setHeader('Content-Type','text/plain')
   res.setHeader('X-Content-Type-Options','nosniff')
 
-  // 1 dòng, không xuống dòng
-  res.send(
-`return(function()local t="${t}"local ts="${ts}"local sig="${sig}"return game:HttpGet("https://${req.get('host')}/load?t="..t.."&ts="..ts.."&sig="..sig)end)()`
-  )
+  // 1 line loader, URL match route /load
+  res.send(`return(function()local t="${t}"local ts="${ts}"local sig="${sig}"return game:HttpGet("https://${req.get('host')}/load?t="..t.."&ts="..ts.."&sig="..sig)end)()`)
 })
 
+// load endpoint
 app.get('/load',limiter,(req,res)=>{
   try{
     const {t,ts,sig}=req.query
-
     if(!t||!ts||!sig) return res.status(400).send('bad')
 
     // verify sig
@@ -93,14 +90,12 @@ app.get('/load',limiter,(req,res)=>{
     // check time (60s)
     if(Date.now()-parseInt(ts)>60000) return res.status(403).send('expired')
 
-    // lấy id từ token
+    // get id from token
     const id = t.split('.')[0]
-
     const f=path.join(DIR,id+'.enc')
     if(!fs.existsSync(f)) return res.status(404).send('not found')
 
     const payload=fs.readFileSync(f,'utf8')
-
     const raw = dec(payload)
     const src = Buffer.from(raw,'base64').toString()
 
@@ -109,7 +104,6 @@ app.get('/load',limiter,(req,res)=>{
     res.setHeader('Cache-Control','no-store')
 
     res.send(src)
-
   }catch{
     res.status(500).send('err')
   }
