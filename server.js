@@ -23,14 +23,14 @@ fs.ensureDirSync(DIR)
 const TOKENS = new Map()
 const IV = 16
 
--- encrypt
+// encrypt
 const enc = t=>{
   const iv = crypto.randomBytes(IV)
   const c = crypto.createCipheriv('aes-256-cbc',KEY,iv)
   return iv.toString('hex')+':'+c.update(t,'utf8','hex')+c.final('hex')
 }
 
--- decrypt
+// decrypt
 const dec = e=>{
   const [ivHex,data]=e.split(':')
   const iv=Buffer.from(ivHex,'hex')
@@ -38,14 +38,14 @@ const dec = e=>{
   return d.update(data,'hex','utf8')+d.final('utf8')
 }
 
--- pack
+// pack
 const pack = s=>{
   return enc(Buffer.from(s).toString('base64'))
 }
 
 const sign = t=>crypto.createHmac('sha256',KEY).update(t).digest('hex')
 
--- tắt check UA cho đỡ ngu người khi test executor
+// tắt check UA cho đỡ lỗi executor
 const badUA = _=>false
 
 const limiter = rateLimit({windowMs:10000,max:25})
@@ -110,7 +110,7 @@ app.get('/load/:id',limiter,(req,res)=>{
 
     const payload=fs.readFileSync(f,'utf8')
 
-    -- 🔥 decrypt tại server
+    // decrypt tại server
     const raw = dec(payload)
     const src = Buffer.from(raw,'base64').toString()
 
