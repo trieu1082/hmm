@@ -9,7 +9,6 @@ require('dotenv').config()
 const app = express()
 const PORT = process.env.PORT || 3000
 
-// key (không tự kill server nữa)
 const KEY = Buffer.from(
   process.env.SECRET_KEY || crypto.randomBytes(32).toString('hex'),
   'hex'
@@ -18,29 +17,28 @@ const KEY = Buffer.from(
 app.use(express.json({limit:"2mb"}))
 app.use(express.urlencoded({extended:true}))
 
+// 👇 serve UI
+app.use(express.static(path.join(__dirname,'public')))
+
 const DIR = path.join(__dirname,'scripts')
 fs.ensureDirSync(DIR)
 
 const TOKENS = new Map()
 const IV = 16
 
-// enc
 const enc = t=>{
   const iv = crypto.randomBytes(IV)
   const c = crypto.createCipheriv('aes-256-cbc',KEY,iv)
   return iv.toString('hex')+':'+c.update(t,'utf8','hex')+c.final('hex')
 }
 
-// pack
 const pack = s=>{
   const def = pako.deflate(s)
   return enc(Buffer.from(def).toString('base64'))
 }
 
-// sign
 const sign = t=>crypto.createHmac('sha256',KEY).update(t).digest('hex')
 
-// ua block
 const badUA = ua=>{
   ua=(ua||'').toLowerCase()
   return ['curl','wget','python','postman','insomnia','httpclient','axios'].some(v=>ua.includes(v))
@@ -135,7 +133,7 @@ return loadstring(src)()
   }
 })
 
-// root
-app.get('/',(req,res)=>res.send('ok'))
+// ❌ BỎ cái này đi
+// app.get('/',(req,res)=>res.send('ok'))
 
 app.listen(PORT,()=>console.log("running "+PORT))
