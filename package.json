@@ -1,0 +1,17 @@
+{
+  "name": "protect-lua",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "crypto": "^1.0.1",
+    "fs-extra": "^11.2.0",
+    "path": "^0.12.7",
+    "express-rate-limit": "^7.0.0",
+    "pako": "^2.1.0",
+    "dotenv": "^16.4.5"
+  }
+}
