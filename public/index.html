@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Protect Lua</title>
+<style>
+body{font-family:sans-serif;margin:2em;}
+textarea{width:100%;height:150px;}
+button{padding:10px 20px;margin-top:10px;}
+</style>
+</head>
+<body>
+<h1>Upload Lua Script</h1>
+<textarea id="script" placeholder="Paste your Lua script here"></textarea><br>
+<button onclick="upload()">Upload</button>
+<pre id="result"></pre>
+
+<script>
+async function upload(){
+  const content=document.getElementById('script').value
+  const res=await fetch('/upload',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({content})
+  })
+  const data=await res.json()
+  document.getElementById('result').textContent=JSON.stringify(data,null,2)
+}
+</script>
+</body>
+</html>
