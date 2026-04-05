@@ -1,0 +1,141 @@
+const express = require('express')
+const crypto = require('crypto')
+const fs = require('fs-extra')
+const path = require('path')
+const rateLimit = require('express-rate-limit')
+const pako = require('pako')
+require('dotenv').config()
+
+const app = express()
+const PORT = process.env.PORT || 3000
+
+// key (không tự kill server nữa)
+const KEY = Buffer.from(
+  process.env.SECRET_KEY || crypto.randomBytes(32).toString('hex'),
+  'hex'
+)
+
+app.use(express.json({limit:"2mb"}))
+app.use(express.urlencoded({extended:true}))
+
+const DIR = path.join(__dirname,'scripts')
+fs.ensureDirSync(DIR)
+
+const TOKENS = new Map()
+const IV = 16
+
+// enc
+const enc = t=>{
+  const iv = crypto.randomBytes(IV)
+  const c = crypto.createCipheriv('aes-256-cbc',KEY,iv)
+  return iv.toString('hex')+':'+c.update(t,'utf8','hex')+c.final('hex')
+}
+
+// pack
+const pack = s=>{
+  const def = pako.deflate(s)
+  return enc(Buffer.from(def).toString('base64'))
+}
+
+// sign
+const sign = t=>crypto.createHmac('sha256',KEY).update(t).digest('hex')
+
+// ua block
+const badUA = ua=>{
+  ua=(ua||'').toLowerCase()
+  return ['curl','wget','python','postman','insomnia','httpclient','axios'].some(v=>ua.includes(v))
+}
+
+const limiter = rateLimit({windowMs:10000,max:25})
+
+// upload
+app.post('/upload',limiter,(req,res)=>{
+  try{
+    const c=req.body.content
+    if(!c) return res.status(400).json({error:'no content'})
+
+    const id=crypto.randomBytes(8).toString('hex')
+    fs.writeFileSync(path.join(DIR,id+'.enc'),pack(c))
+
+    const base=`${req.protocol}://${req.get('host')}`
+
+    res.json({
+      id,
+      loader:`loadstring(game:HttpGet("${base}/token/${id}"))()`
+    })
+  }catch{
+    res.status(500).json({error:'server'})
+  }
+})
+
+// token
+app.get('/token/:id',(req,res)=>{
+  if(badUA(req.headers['user-agent'])) return res.status(403).send('blocked')
+
+  const id=req.params.id
+  const t=crypto.randomBytes(12).toString('hex')
+  const ts=Date.now()
+
+  TOKENS.set(t,{id,time:ts,ip:req.ip})
+
+  const sig=sign(t+ts)
+
+  res.send(`
+return (function()
+  local t="${t}"
+  local ts="${ts}"
+  local sig="${sig}"
+  return game:HttpGet("${req.protocol}://${req.get('host')}/load/${id}?t="..t.."&ts="..ts.."&sig="..sig)
+end)()
+`)
+})
+
+// load
+app.get('/load/:id',limiter,(req,res)=>{
+  try{
+    const {t,ts,sig}=req.query
+    const d=TOKENS.get(t)
+
+    if(!d) return res.status(403).send('bad token')
+    if(req.ip!==d.ip) return res.status(403).send('ip mismatch')
+    if(Date.now()-d.time>10000){TOKENS.delete(t);return res.status(403).send('expired')}
+    if(sig!==sign(t+ts)) return res.status(403).send('invalid sig')
+
+    TOKENS.delete(t)
+
+    const f=path.join(DIR,req.params.id+'.enc')
+    if(!fs.existsSync(f)) return res.status(404).send('not found')
+
+    const payload=fs.readFileSync(f,'utf8')
+
+    res.setHeader('Content-Type','text/plain')
+
+    res.send(`
+-- protected
+local d="${payload}"
+local Http=game:GetService("HttpService")
+
+local function b64(x)return Http:Base64Decode(x)end
+local function dec(e)local _,dat=e:match("([^:]+):(.+)")return dat end
+
+if not identifyexecutor then return end
+
+local ok,src=pcall(function()
+  return b64(dec(d))
+end)
+
+if not ok then return end
+
+local _=0 for i=1,30 do _=_+i end
+
+return loadstring(src)()
+`)
+  }catch{
+    res.status(500).send('err')
+  }
+})
+
+// root
+app.get('/',(req,res)=>res.send('ok'))
+
+app.listen(PORT,()=>console.log("running "+PORT))
