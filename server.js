@@ -39,13 +39,11 @@ const dec = e=>{
 }
 
 // pack
-const pack = s=>{
-  return enc(Buffer.from(s).toString('base64'))
-}
+const pack = s=>enc(Buffer.from(s).toString('base64'))
 
 const sign = t=>crypto.createHmac('sha256',KEY).update(t).digest('hex')
 
-// tắt check UA cho đỡ lỗi executor
+// tắt UA check
 const badUA = _=>false
 
 const limiter = rateLimit({windowMs:10000,max:25})
@@ -80,14 +78,13 @@ app.get('/token/:id',(req,res)=>{
 
   const sig=sign(t+ts)
 
-  res.send(`
-return (function()
-  local t="${t}"
-  local ts="${ts}"
-  local sig="${sig}"
-  return game:HttpGet("https://${req.get('host')}/load/${id}?t="..t.."&ts="..ts.."&sig="..sig)
-end)()
-`)
+  res.setHeader('Content-Type','text/plain')
+  res.setHeader('X-Content-Type-Options','nosniff')
+
+  // 1 LINE -> không bao giờ vỡ
+  res.send(
+`return(function()local t="${t}"local ts="${ts}"local sig="${sig}"return game:HttpGet("https://${req.get('host')}/load/${id}?t="..t.."&ts="..ts.."&sig="..sig)end)()`
+  )
 })
 
 app.get('/load/:id',limiter,(req,res)=>{
@@ -96,7 +93,7 @@ app.get('/load/:id',limiter,(req,res)=>{
     const d=TOKENS.get(t)
 
     if(!d) return res.status(403).send('bad token')
-    if(Date.now()-d.time>10000){
+    if(Date.now()-d.time>60000){ // tăng lên 60s
       TOKENS.delete(t)
       return res.status(403).send('expired')
     }
@@ -110,14 +107,16 @@ app.get('/load/:id',limiter,(req,res)=>{
 
     const payload=fs.readFileSync(f,'utf8')
 
-    // decrypt tại server
     const raw = dec(payload)
     const src = Buffer.from(raw,'base64').toString()
 
     res.setHeader('Content-Type','text/plain')
+    res.setHeader('X-Content-Type-Options','nosniff')
+    res.setHeader('Cache-Control','no-store')
+
     res.send(src)
 
-  }catch(e){
+  }catch{
     res.status(500).send('err')
   }
 })
